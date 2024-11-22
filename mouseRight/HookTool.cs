@@ -55,7 +55,7 @@ namespace mouseRight
 
         private static IntPtr HookCallback(int nCode, IntPtr wParam, IntPtr lParam)
         {
-
+            Debug.WriteLine($"HookCallback1 nCode = {nCode}, wParam = {wParam}, lParam = {lParam}");
             if (nCode >= 0 && wParam == (IntPtr)WM_RBUTTONDOWN)
             {
                 mouseTrack.Clear();
@@ -64,14 +64,29 @@ namespace mouseRight
             if (nCode >= 0 && wParam == (IntPtr)WM_RBUTTONUP)
             {
                 MouseRightDown = false;
-                Debug.WriteLine($"mouseTrack length = {mouseTrack.Count}");
-                if (mouseTrack.Count >= 15)
+                //Debug.WriteLine($"mouseTrack length = {mouseTrack.Count}");
+                try
                 {
-                    var degree = GetDegrees(mouseTrack[0], mouseTrack[^1]);
-                    var track = GetTrack(degree);
-                    Debug.WriteLine($"mouseTrack degree = {degree}, track = {track}");
+                    if (mouseTrack.Count >= 15)
+                    {
+                        var degree = GetDegrees(mouseTrack[0], mouseTrack[^1]);
+                        var track = GetTrack(degree);
+                        if (track != MOUSE_TRACK.UNKOWN)
+                        {
+                            Debug.WriteLine($"mouseTrack degree = {degree}, track = {track}");
+                            ExecuteTrace(track);
+                            return (IntPtr)1;
+                        }
+                    }
                 }
-                return (IntPtr)1;
+                catch (Exception ex)
+                {
+                    Debug.WriteLine(ex.Message);
+                }
+                finally
+                {
+                    mouseTrack.Clear();
+                }
             }
             if (MouseRightDown && nCode >= 0 && wParam == (IntPtr)WM_MOUSEMOVE)
             {
@@ -81,6 +96,7 @@ namespace mouseRight
                 //Debug.WriteLine($"x={hookStruct.pt.x},y={hookStruct.pt.y}");
             }
 
+            Debug.WriteLine($"HookCallback2 nCode = {nCode}, wParam = {wParam}, lParam = {lParam}");
             return CallNextHookEx(_hookId, nCode, wParam, lParam);
         }
 
@@ -100,37 +116,38 @@ namespace mouseRight
             return degree;
         }
 
+        private const double deviation = 15;
         private static MOUSE_TRACK GetTrack(double degree)
         {
-            if (degree > 360 - 7.5 || degree < 7.5)
+            if (degree > 360 - deviation || degree < deviation)
             {
                 return MOUSE_TRACK.RIGHT;
             }
-            else if (degree > 45 - 7.5 && degree < 45 + 7.5)
+            else if (degree > 45 - deviation && degree < 45 + deviation)
             {
                 return MOUSE_TRACK.RIGHT_DOWN;
             }
-            else if (degree > 90 - 7.5 && degree < 90 + 7.5)
+            else if (degree > 90 - deviation && degree < 90 + deviation)
             {
                 return MOUSE_TRACK.DOWN;
             }
-            else if (degree > 135 - 7.5 && degree < 135 + 7.5)
+            else if (degree > 135 - deviation && degree < 135 + deviation)
             {
                 return MOUSE_TRACK.LEFT_DOWN;
             }
-            else if (degree > 180 - 7.5 && degree < 180 + 7.5)
+            else if (degree > 180 - deviation && degree < 180 + deviation)
             {
                 return MOUSE_TRACK.LEFT;
             }
-            else if (degree > 225 - 7.5 && degree < 225 + 7.5)
+            else if (degree > 225 - deviation && degree < 225 + deviation)
             {
                 return MOUSE_TRACK.LEFT_UP;
             }
-            else if (degree > 270 - 7.5 && degree < 270 + 7.5)
+            else if (degree > 270 - deviation && degree < 270 + deviation)
             {
                 return MOUSE_TRACK.UP;
             }
-            else if (degree > 315 - 7.5 && degree < 315 + 7.5)
+            else if (degree > 315 - deviation && degree < 315 + deviation)
             {
                 return MOUSE_TRACK.RIGHT_UP;
             }
@@ -151,6 +168,54 @@ namespace mouseRight
             LEFT_UP,
             UP,
             RIGHT_UP
+        }
+
+        private static void ExecuteTrace(MOUSE_TRACK track)
+        {
+            switch (track)
+            {
+                case MOUSE_TRACK.RIGHT:
+                    Debug.WriteLine("Right");
+                    SimulateKey(VK_END);
+                    break;
+                case MOUSE_TRACK.RIGHT_DOWN:
+                    Debug.WriteLine("Right Down");
+                    break;
+                case MOUSE_TRACK.DOWN:
+                    Debug.WriteLine("Down");
+                    break;
+                case MOUSE_TRACK.LEFT_DOWN:
+                    Debug.WriteLine("Left Down");
+                    break;
+                case MOUSE_TRACK.LEFT:
+                    Debug.WriteLine("Left");
+                    SimulateKey(VK_HOME);
+                    break;
+                case MOUSE_TRACK.LEFT_UP:
+                    Debug.WriteLine("Left Up");
+                    break;
+                case MOUSE_TRACK.UP:
+                    Debug.WriteLine("Up");
+                    break;
+                case MOUSE_TRACK.RIGHT_UP:
+                    Debug.WriteLine("Right Up");
+                    break;
+                default:
+                    Debug.WriteLine("Unkown");
+                    break;
+            }
+        }
+
+        static void SimulateKey(ushort keyCode)
+        {
+            INPUT input = new INPUT();
+            input.type = INPUT_KEYBOARD;
+            input.u.ki.wVk = keyCode;
+            input.u.ki.dwFlags = KEYEVENTF_KEYUP;
+            SendInput(1, ref input, Marshal.SizeOf(typeof(INPUT)));
+            Thread.Sleep(10);
+            input.u.ki.dwFlags = KEYEVENTF_KEYDOWN;
+            SendInput(1, ref input, Marshal.SizeOf(typeof(INPUT)));
         }
 
         #region WinAPI Imports
@@ -188,6 +253,62 @@ namespace mouseRight
 
         [DllImport("kernel32.dll", CharSet = CharSet.Auto, SetLastError = true)]
         private static extern IntPtr GetModuleHandle(string lpModuleName);
+
+        [StructLayout(LayoutKind.Sequential)]
+        public struct INPUT
+        {
+            public uint type;
+            public INPUTUNION u;
+        }
+
+        [StructLayout(LayoutKind.Explicit)]
+        public struct INPUTUNION
+        {
+            [FieldOffset(0)] public MOUSEINPUT mi;
+            [FieldOffset(0)] public KEYBDINPUT ki;
+            [FieldOffset(0)] public HARDWAREINPUT hi;
+        }
+
+        [StructLayout(LayoutKind.Sequential)]
+        public struct KEYBDINPUT
+        {
+            public ushort wVk;
+            public ushort wScan;
+            public uint dwFlags;
+            public uint time;
+            public IntPtr dwExtraInfo;
+        }
+
+        [StructLayout(LayoutKind.Sequential)]
+        public struct MOUSEINPUT
+        {
+            public int dx;
+            public int dy;
+            public uint mouseData;
+            public uint dwFlags;
+            public uint time;
+            public IntPtr dwExtraInfo;
+        }
+
+        [StructLayout(LayoutKind.Sequential)]
+        public struct HARDWAREINPUT
+        {
+            public uint uMsg;
+            public ushort wParamL;
+            public ushort wParamH;
+        }
+
+        const uint INPUT_KEYBOARD = 1;
+        const uint KEYEVENTF_KEYDOWN = 0x0000;
+        const uint KEYEVENTF_KEYUP = 0x0002;
+
+        [DllImport("user32.dll", CharSet = CharSet.Auto)]
+        public static extern uint SendInput(uint nInputs, ref INPUT pInputs, int cbSize);
+
+        // 定义虚拟键码
+        const ushort VK_HOME = 0x24;
+        const ushort VK_END = 0x23;
+
 
         #endregion
     }
