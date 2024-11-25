@@ -60,8 +60,9 @@ namespace mouseRight
             {
                 mouseTrack.Clear();
                 MouseRightDown = true;
+                return (IntPtr)1;
             }
-            if (nCode >= 0 && wParam == (IntPtr)WM_RBUTTONUP)
+            else if (nCode >= 0 && wParam == (IntPtr)WM_RBUTTONUP)
             {
                 MouseRightDown = false;
                 //Debug.WriteLine($"mouseTrack length = {mouseTrack.Count}");
@@ -88,7 +89,7 @@ namespace mouseRight
                     mouseTrack.Clear();
                 }
             }
-            if (MouseRightDown && nCode >= 0 && wParam == (IntPtr)WM_MOUSEMOVE)
+            else if (MouseRightDown && nCode >= 0 && wParam == (IntPtr)WM_MOUSEMOVE)
             {
                 // 阻止右键事件
                 MSLLHOOKSTRUCT hookStruct = Marshal.PtrToStructure<MSLLHOOKSTRUCT>(lParam);
