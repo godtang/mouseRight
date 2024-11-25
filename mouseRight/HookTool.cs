@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Diagnostics;
+using System.Linq;
 using System.Runtime.InteropServices;
 using System.Threading;
 
@@ -53,51 +54,63 @@ namespace mouseRight
 
         private delegate IntPtr LowLevelMouseProc(int nCode, IntPtr wParam, IntPtr lParam);
 
+
+        //Debug.WriteLine($"procesName={procesName}");
+        private static readonly string[] WhiteProcess = { "code", "devenv" };
+
+
         private static IntPtr HookCallback(int nCode, IntPtr wParam, IntPtr lParam)
         {
-            Debug.WriteLine($"HookCallback1 nCode = {nCode}, wParam = {wParam}, lParam = {lParam}");
+            //Debug.WriteLine($"HookCallback1 nCode = {nCode}, wParam = {wParam}, lParam = {lParam}");
+
             if (nCode >= 0 && wParam == (IntPtr)WM_RBUTTONDOWN)
             {
-                mouseTrack.Clear();
-                MouseRightDown = true;
-                return (IntPtr)1;
-            }
-            else if (nCode >= 0 && wParam == (IntPtr)WM_RBUTTONUP)
-            {
-                MouseRightDown = false;
-                //Debug.WriteLine($"mouseTrack length = {mouseTrack.Count}");
-                try
-                {
-                    if (mouseTrack.Count >= 15)
-                    {
-                        var degree = GetDegrees(mouseTrack[0], mouseTrack[^1]);
-                        var track = GetTrack(degree);
-                        if (track != MOUSE_TRACK.UNKOWN)
-                        {
-                            Debug.WriteLine($"mouseTrack degree = {degree}, track = {track}");
-                            ExecuteTrace(track);
-                            return (IntPtr)1;
-                        }
-                    }
-                }
-                catch (Exception ex)
-                {
-                    Debug.WriteLine(ex.Message);
-                }
-                finally
+                string processName = GetProcessName().ToLower();
+                if (WhiteProcess.Contains(processName))
                 {
                     mouseTrack.Clear();
+                    MouseRightDown = true;
+                    return (IntPtr)1;
                 }
             }
-            else if (MouseRightDown && nCode >= 0 && wParam == (IntPtr)WM_MOUSEMOVE)
+            if (MouseRightDown)
             {
-                // 阻止右键事件
-                MSLLHOOKSTRUCT hookStruct = Marshal.PtrToStructure<MSLLHOOKSTRUCT>(lParam);
-                mouseTrack.Add(hookStruct.pt);
-                //Debug.WriteLine($"x={hookStruct.pt.x},y={hookStruct.pt.y}");
+                if (nCode >= 0 && wParam == (IntPtr)WM_RBUTTONUP)
+                {
+                    MouseRightDown = false;
+                    //Debug.WriteLine($"mouseTrack length = {mouseTrack.Count}");
+                    try
+                    {
+                        if (mouseTrack.Count >= 15)
+                        {
+                            var degree = GetDegrees(mouseTrack[0], mouseTrack[^1]);
+                            var track = GetTrack(degree);
+                            if (track != MOUSE_TRACK.UNKOWN)
+                            {
+                                Debug.WriteLine($"mouseTrack degree = {degree}, track = {track}");
+                                ExecuteTrace(track);
+                                return (IntPtr)1;
+                            }
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        Debug.WriteLine(ex.Message);
+                    }
+                    finally
+                    {
+                        mouseTrack.Clear();
+                    }
+                }
+                else if (MouseRightDown && nCode >= 0 && wParam == (IntPtr)WM_MOUSEMOVE)
+                {
+                    // 阻止右键事件
+                    MSLLHOOKSTRUCT hookStruct = Marshal.PtrToStructure<MSLLHOOKSTRUCT>(lParam);
+                    mouseTrack.Add(hookStruct.pt);
+                    //Debug.WriteLine($"x={hookStruct.pt.x},y={hookStruct.pt.y}");
+                }
             }
-
-            Debug.WriteLine($"HookCallback2 nCode = {nCode}, wParam = {wParam}, lParam = {lParam}");
+            //Debug.WriteLine($"HookCallback2 nCode = {nCode}, wParam = {wParam}, lParam = {lParam}");
             return CallNextHookEx(_hookId, nCode, wParam, lParam);
         }
 
@@ -209,8 +222,10 @@ namespace mouseRight
 
         static void SimulateKey(ushort keyCode)
         {
-            INPUT input = new INPUT();
-            input.type = INPUT_KEYBOARD;
+            INPUT input = new INPUT
+            {
+                type = INPUT_KEYBOARD
+            };
             input.u.ki.wVk = keyCode;
             input.u.ki.dwFlags = KEYEVENTF_KEYUP;
             SendInput(1, ref input, Marshal.SizeOf(typeof(INPUT)));
@@ -219,9 +234,21 @@ namespace mouseRight
             SendInput(1, ref input, Marshal.SizeOf(typeof(INPUT)));
         }
 
+        // 获取当前鼠标位置对应的窗口的进程名称
+        private static string GetProcessName()
+        {
+            POINT point;
+            GetCursorPos(out point);
+            IntPtr hWnd = WindowFromPoint(point);
+            uint processId;
+            GetWindowThreadProcessId(hWnd, out processId);
+            Process process = Process.GetProcessById((int)processId);
+            return process.ProcessName;
+        }
+
         #region WinAPI Imports
         [StructLayout(LayoutKind.Sequential)]
-        private struct POINT
+        public struct POINT
         {
             public int x;
             public int y;
@@ -310,7 +337,16 @@ namespace mouseRight
         const ushort VK_HOME = 0x24;
         const ushort VK_END = 0x23;
 
+        [DllImport("user32.dll")]
+        public static extern bool GetCursorPos(out POINT lpPoint);
 
+        // 导入 WindowFromPoint，用于获取指定点的窗口句柄
+        [DllImport("user32.dll")]
+        public static extern IntPtr WindowFromPoint(POINT Point);
+
+        // 导入 GetWindowThreadProcessId，用于获取窗口对应的进程 ID
+        [DllImport("user32.dll")]
+        public static extern uint GetWindowThreadProcessId(IntPtr hWnd, out uint lpdwProcessId);
         #endregion
     }
 }
